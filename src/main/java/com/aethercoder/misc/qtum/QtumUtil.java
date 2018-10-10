@@ -1,12 +1,12 @@
 package com.aethercoder.misc.qtum;
 
 import com.aethercoder.basic.utils.BeanUtils;
+import com.aethercoder.misc.qtum.walletTransaction.TransactionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
@@ -149,6 +149,20 @@ public class QtumUtil {
         return result;
     }
 
+    public List<TransactionModel> callContractModel(String contract, List<String> params) {
+        List<TransactionModel> result = new ArrayList<>();
+        for (String param : params) {
+            List<Object> list = new ArrayList<>();
+            list.add(contract);
+            list.add(param);
+            HashMap map = (HashMap) callQtumService("callcontract", list);
+            TransactionModel model = new TransactionModel(map, param);
+            result.add(model);
+        }
+
+        return result;
+    }
+
     public Double estimateFee(Integer nBlocks) {
         List<Object> list = new ArrayList<>();
         list.add(nBlocks);
@@ -230,10 +244,37 @@ public class QtumUtil {
         HashMap result = null;
         try {
             result = restTemplateOrigin.postForObject(url, request, HashMap.class);
-        } catch (HttpServerErrorException e) {
-            throw new RuntimeException(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            result = protectCallQtumService(method, params, 1, request);
         }
-        return result.get("result");
+        return result != null ? result.get("result") : new HashMap();
+    }
+
+    private HashMap protectCallQtumService(String method, Object params, Integer peerNum, HttpEntity<String> request){
+
+        HashMap result = null;
+        try {
+            String urlNew = "";
+            switch(peerNum){
+                case 1:
+                    urlNew = url1;
+                    break;
+                case 2:
+                    urlNew = url2;
+                    break;
+                default:
+                    urlNew = url;
+            }
+            result = restTemplateOrigin.postForObject(urlNew, request, HashMap.class);
+        } catch (Exception e) {
+            e.printStackTrace();
+            if(peerNum != 2){
+                result = protectCallQtumService(method, params, 2, request);
+            }
+        }
+
+        return result;
     }
 
     public Object callQtumService(String method, Object params, Integer flag) {
@@ -261,8 +302,8 @@ public class QtumUtil {
             else{
                 result = restTemplateOrigin.postForObject(url, request, HashMap.class);
             }
-        } catch (HttpServerErrorException e) {
-            throw new RuntimeException(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            e.printStackTrace();
         }
         return result.get("result");
     }
@@ -288,5 +329,32 @@ public class QtumUtil {
         else{
             return 2;
         }
+    }
+
+    public Integer getRawMemPool(){
+        List paramList = new ArrayList();
+
+        List result = (List) this.callQtumService("getrawmempool", paramList);
+        return result.size();
+    }
+
+    public Integer getBlockTxs(Integer blockCount){
+        List paramList = new ArrayList();
+        paramList.add(blockCount);
+        String hash = (String) this.callQtumService("getblockhash", paramList);
+
+        paramList = new ArrayList();
+        paramList.add(hash);
+        Map map = (Map)this.callQtumService("getblock", paramList);
+
+        System.out.println("区块" + blockCount + "的交易量为： " +((List)map.get("tx")).size());
+        return ((List)map.get("tx")).size();
+    }
+
+    public String sendRawTransaction(String rawTransaction, Integer peerNum) {
+        List<Object> list = new ArrayList<>();
+        list.add(rawTransaction);
+
+        return (String) callQtumService("sendrawtransaction", list, peerNum);
     }
 }
